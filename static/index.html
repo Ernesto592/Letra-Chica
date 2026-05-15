@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Letra Chica - Analizador de Contratos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        body { background: linear-gradient(135deg, #0f172a 0%, #1e2937 100%); }
+        .drop-zone.dragover { border-color: #10b981; background-color: rgba(16, 185, 129, 0.1); }
+        .riesgo-alto { border-left: 5px solid #ef4444; background-color: #7f1d1d; }
+        .riesgo-medio { border-left: 5px solid #f59e0b; background-color: #78350f; }
+        .riesgo-bajo { border-left: 5px solid #10b981; background-color: #14532d; }
+    </style>
+</head>
+<body class="min-h-screen text-gray-100">
+    <div class="max-w-5xl mx-auto p-6">
+        <!-- Header -->
+        <div class="text-center mb-10">
+            <div class="flex items-center justify-center gap-3 mb-4">
+                <i class="fas fa-eye text-5xl text-yellow-400"></i>
+                <h1 class="text-5xl font-bold tracking-tighter">Letra Chica</h1>
+            </div>
+            <p class="text-xl text-gray-300">La IA que lee la letra chica por ti</p>
+            <p class="text-sm text-gray-400">Para estudiantes universitarios • 100% gratis y local</p>
+        </div>
+
+        <div class="bg-slate-800 rounded-3xl p-8 shadow-2xl">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- PDF -->
+                <div>
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-file-pdf text-red-500"></i> Subir PDF
+                    </h2>
+                    <div id="drop-zone" class="drop-zone border-2 border-dashed border-gray-600 hover:border-emerald-500 rounded-2xl p-10 text-center cursor-pointer">
+                        <input type="file" id="fileInput" accept=".pdf" class="hidden">
+                        <i class="fas fa-cloud-upload-alt text-5xl text-gray-400 mb-4"></i>
+                        <p class="text-lg">Arrastra o haz clic</p>
+                        <div id="file-name" class="hidden mt-4 p-3 bg-slate-700 rounded-xl text-sm">
+                            <i class="fas fa-file-pdf text-red-500"></i> 
+                            <span id="filename-text" class="ml-2 font-medium"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Texto plano -->
+                <div>
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-keyboard text-blue-400"></i> Pegar texto
+                    </h2>
+                    <textarea id="textoInput" rows="8" 
+                        class="w-full bg-slate-900 border border-gray-600 rounded-2xl p-4 text-sm focus:outline-none focus:border-emerald-500"
+                        placeholder="Pega aquí todo el texto del contrato..."></textarea>
+                </div>
+            </div>
+
+            <div class="text-center mt-8">
+                <button onclick="analizar()" id="btnAnalizar"
+                    class="bg-emerald-600 hover:bg-emerald-700 px-12 py-4 rounded-2xl font-semibold text-lg flex items-center gap-3 mx-auto disabled:opacity-50">
+                    <i class="fas fa-brain"></i>
+                    Analizar con IA
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading" class="hidden text-center py-12">
+            <i class="fas fa-spinner fa-spin text-5xl text-emerald-500 mb-6"></i>
+            <p id="loading-text" class="text-xl">Analizando contrato...</p>
+            <p id="timer" class="text-3xl font-mono text-emerald-400 mt-4">0s</p>
+        </div>
+
+        <!-- Resultado -->
+        <div id="resultado" class="hidden mt-8"></div>
+
+        <!-- Disclaimer -->
+        <div class="mt-12 text-center text-xs text-gray-500 max-w-2xl mx-auto leading-relaxed">
+            ⚠️ <strong>Letra Chica es solo una herramienta educativa.</strong> Los resultados son generados por IA local y no sustituyen el consejo de un abogado.
+        </div>
+    </div>
+
+    <script>
+        let timerInterval;
+        let tiempoTotal = 0;
+        let ultimoAnalisis = null;
+
+        async function analizar() {
+            const file = document.getElementById('fileInput').files[0];
+            const texto = document.getElementById('textoInput').value.trim();
+
+            if (!file && !texto) {
+                alert("Sube un PDF o pega el texto del contrato");
+                return;
+            }
+
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('resultado').classList.add('hidden');
+            document.getElementById('btnAnalizar').disabled = true;
+
+            let seconds = 0;
+            document.getElementById('timer').textContent = '0s';
+
+            timerInterval = setInterval(() => {
+                seconds++;
+                document.getElementById('timer').textContent = seconds + 's';
+            }, 1000);
+
+            const formData = new FormData();
+            if (file) formData.append("file", file);
+            if (texto) formData.append("texto_directo", texto);
+
+            try {
+                const res = await fetch("/analizar", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!res.ok) throw new Error((await res.json()).detail || "Error en el servidor");
+
+                const data = await res.json();
+                clearInterval(timerInterval);
+                tiempoTotal = seconds;
+                ultimoAnalisis = data;
+                mostrarResultado(data);
+
+            } catch (err) {
+                clearInterval(timerInterval);
+                alert("Error: " + err.message);
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('btnAnalizar').disabled = false;
+            }
+        }
+
+        function mostrarResultado(data) {
+    const div = document.getElementById('resultado');
+    div.classList.remove('hidden');
+
+    let html = `
+        <div class="bg-slate-800 rounded-3xl p-8">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-3xl font-bold">Análisis completado</h2>
+                <div class="flex gap-3">
+                    <div class="text-sm bg-slate-700 px-4 py-2 rounded-full">⏱ ${tiempoTotal} segundos</div>
+                    <button onclick="descargarPDF()" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-full flex items-center gap-2 text-sm">
+                        <i class="fas fa-download"></i> Descargar PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- Leyenda -->
+            <div class="bg-slate-900 p-5 rounded-2xl mb-8 text-sm">
+                <strong class="block mb-3">Leyenda de alertas:</strong>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div><span class="text-red-500">🔴 ABUSIVA</span> → Viola la ley (art. 50 Código del Consumidor). No estás obligado a aceptarla.</div>
+                    <div><span class="text-yellow-400">🟡 RIESGOSA</span> → Te pone en desventaja. Negóciala antes de firmar.</div>
+                    <div><span class="text-emerald-400">🟢 NORMAL</span> → Cláusula estándar, sin riesgo importante.</div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 p-6 rounded-2xl mb-8">
+                <strong class="text-emerald-400">Recomendación General:</strong><br>
+                <p class="text-lg mt-2">${data.recomendacion_general || "Revisa las cláusulas a continuación"}</p>
+            </div>
+
+            <h3 class="text-xl font-semibold mb-4">Cláusulas detectadas</h3>
+    `;
+
+    if (data.clausulas_riesgosas && data.clausulas_riesgosas.length > 0) {
+        data.clausulas_riesgosas.forEach((c, i) => {
+            let colorClass = c.nivel === "ABUSIVA" ? "riesgo-alto" : 
+                           c.nivel === "RIESGOSA" ? "riesgo-medio" : "riesgo-bajo";
+            let badge = c.nivel === "ABUSIVA" ? "🔴 ABUSIVA" : 
+                       c.nivel === "RIESGOSA" ? "🟡 RIESGOSA" : "🟢 NORMAL";
+
+            html += `
+                <div class="mb-6 ${colorClass} p-6 rounded-2xl">
+                    <div class="flex justify-between mb-3">
+                        <span class="font-semibold">Cláusula ${i+1}</span>
+                        <span class="px-4 py-1 text-xs font-bold rounded-full bg-black/40">${badge}</span>
+                    </div>
+                    <p class="italic mb-4">"${c.clausula_original}"</p>
+                    <div class="grid grid-cols-1 gap-3 text-sm">
+                        <p><strong>Categoría:</strong> ${c.categoria}</p>
+                        <p><strong>Explicación:</strong> ${c.explicacion_simple}</p>
+                        <p><strong>Base Legal:</strong> ${c.base_legal}</p>
+                        <p class="font-semibold text-emerald-400"><strong>Qué hacer:</strong> ${c.accion_recomendada}</p>
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    // === ENLACES OFICIALES DENTRO DE LA PÁGINA ===
+    html += `
+        <div class="mt-10 bg-slate-900 p-6 rounded-2xl">
+            <h3 class="font-semibold mb-4 text-lg">¿Quieres presentar una denuncia?</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <a href="https://enlinea.indecopi.gob.pe/reclamavirtual/" target="_blank"
+                   class="block p-4 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors">
+                    <strong class="text-red-400">INDECOPI - Reclama Virtual</strong><br>
+                    <span class="text-sm text-gray-400">Denuncias por cláusulas abusivas en contratos</span>
+                </a>
+                
+                <a href="https://aplicativosweb2.sunafil.gob.pe/si.denunciasVirtuales" target="_blank"
+                   class="block p-4 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors">
+                    <strong class="text-orange-400">SUNAFIL - Denuncia Laboral</strong><br>
+                    <span class="text-sm text-gray-400">Para contratos de prácticas preprofesionales</span>
+                </a>
+            </div>
+        </div>
+    `;
+
+    html += `<div class="text-center mt-8"><button onclick="nuevoAnalisis()" class="bg-gray-700 hover:bg-gray-600 px-8 py-4 rounded-2xl font-semibold">← Nuevo Análisis</button></div>`;
+
+    div.innerHTML = html;
+}
+
+                // ==================== DESCARGAR PDF MEJORADO ====================
+        function descargarPDF() {
+    if (!ultimoAnalisis) return;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+    let y = 20;
+    const margin = 20;
+    const pageWidth = 170;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text("Letra Chica - Análisis de Contrato", margin, y);
+    y += 15;
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Fecha: ${new Date().toLocaleDateString('es-PE')}   |   Tiempo: ${tiempoTotal} segundos`, margin, y);
+    y += 15;
+
+    // Recomendación
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Recomendación General:", margin, y);
+    y += 8;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    const recLines = doc.splitTextToSize(ultimoAnalisis.recomendacion_general || "-", pageWidth);
+    doc.text(recLines, margin, y);
+    y += recLines.length * 8 + 12;
+
+    // Cláusulas
+    if (ultimoAnalisis.clausulas_riesgosas && ultimoAnalisis.clausulas_riesgosas.length > 0) {
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Cláusulas Analizadas:", margin, y);
+        y += 12;
+
+        ultimoAnalisis.clausulas_riesgosas.forEach((c, i) => {
+            if (y > 260) { doc.addPage(); y = 20; }
+
+            doc.setFontSize(13);
+            doc.setFont("helvetica", "bold");
+            doc.text(`${c.nivel} - Cláusula ${i+1}`, margin, y);
+            y += 9;
+
+            doc.setFontSize(11);
+            doc.setFont("helvetica", "italic");
+            const clausulaLines = doc.splitTextToSize(`"${c.clausula_original}"`, pageWidth);
+            doc.text(clausulaLines, margin, y);
+            y += clausulaLines.length * 7 + 8;
+
+            doc.setFont("helvetica", "normal");
+            doc.text(`Explicación: ${c.explicacion_simple}`, margin, y, { maxWidth: pageWidth });
+            y += 12;
+            doc.text(`Qué hacer: ${c.accion_recomendada}`, margin, y, { maxWidth: pageWidth });
+            y += 15;
+        });
+    }
+
+    // Enlaces oficiales
+    y += 10;
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("¿Quieres denunciar?", margin, y);
+    y += 8;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text("INDECOPI (Reclama Virtual):", margin, y);
+    doc.textWithLink("→ https://enlinea.indecopi.gob.pe/reclamavirtual/", margin, y + 5, { url: "https://enlinea.indecopi.gob.pe/reclamavirtual/" });
+    y += 12;
+    doc.text("SUNAFIL (Denuncia Laboral):", margin, y);
+    doc.textWithLink("→ https://aplicativosweb2.sunafil.gob.pe/si.denunciasVirtuales", margin, y + 5, { url: "https://aplicativosweb2.sunafil.gob.pe/si.denunciasVirtuales" });
+
+    doc.save("Analisis_LetraChica.pdf");
+}
+
+        function nuevoAnalisis() {
+            document.getElementById('resultado').classList.add('hidden');
+            document.getElementById('textoInput').value = '';
+            document.getElementById('fileInput').value = '';
+            document.getElementById('file-name').classList.add('hidden');
+        }
+
+        // Drag & Drop
+        const dropZone = document.getElementById('drop-zone');
+        dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                document.getElementById('filename-text').textContent = e.target.files[0].name;
+                document.getElementById('file-name').classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
