@@ -112,7 +112,7 @@
             if (texto) formData.append("texto_directo", texto);
 
             try {
-                const res = await fetch("http://127.0.0.1:8000/analizar", {
+                const res = await fetch("https://letra-chica-production.up.railway.app/analizar", {
                     method: "POST",
                     body: formData
                 });
